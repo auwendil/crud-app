@@ -23,10 +23,10 @@ build:
 docker-build:
 	docker build -f ./Dockerfile -t crud-app .
 
-docker-run-with-mongo:
+docker-run-with-mongo: get-mongo-ip
 	docker run -it -p 3000:3000 --rm --name crud-app crud-app /opt/crud-app --db_type=mongodb --conn_string="mongodb://$(MONGO_IP):27017"
 
-docker-run-with-postgres:
+docker-run-with-postgres: get-postgres-ip
 	docker run -it -p 3000:3000 --rm --name crud-app crud-app /opt/crud-app --db_type=postgresql --conn_string="postgresql://postgres:$(POSTGRES_PW)@$(POSTGRES_IP):5432"
 
 start-postgres:
