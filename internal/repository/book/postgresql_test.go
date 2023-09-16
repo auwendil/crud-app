@@ -11,12 +11,11 @@ import (
 var booksPostgresqlRows = []string{"id", "name", "author"}
 
 func Test_Postgresql_GetAllBooks_ShouldReturnExpectedArray(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	// setup
+	testServer, mock := prepareTestDB(t)
+	defer testServer.DB.Close()
 
+	// given
 	expectedBooks := []*models.Book{
 		{ID: "1", Name: "Book1", Author: "Author1"},
 		{ID: "2", Name: "Book2", Author: "Author2"},
@@ -33,8 +32,10 @@ func Test_Postgresql_GetAllBooks_ShouldReturnExpectedArray(t *testing.T) {
 		WillReturnRows(dbRows)
 	mock.ExpectCommit()
 
-	testServer := PostgreSQLRepo{DB: db}
+	// when
 	resBooks, err := testServer.GetAllBooks()
+
+	// then
 	if err != nil {
 		t.Error(err)
 	}
@@ -51,20 +52,20 @@ func Test_Postgresql_GetAllBooks_ShouldReturnExpectedArray(t *testing.T) {
 }
 
 func Test_Postgresql_GetAllBooks_ShouldReturnEmptyArrayWhenTableIsEmpty(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	// setup
+	testServer, mock := prepareTestDB(t)
+	defer testServer.DB.Close()
 
+	// given
 	dbRows := sqlmock.NewRows(booksPostgresqlRows)
-
 	mock.ExpectQuery(`SELECT id, name, author FROM books;`).
 		WillReturnRows(dbRows)
 	mock.ExpectCommit()
 
-	testServer := PostgreSQLRepo{DB: db}
+	// when
 	resBooks, err := testServer.GetAllBooks()
+
+	// then
 	if err != nil {
 		t.Error(err)
 	}
@@ -79,25 +80,25 @@ func Test_Postgresql_GetAllBooks_ShouldReturnEmptyArrayWhenTableIsEmpty(t *testi
 }
 
 func Test_Postgresql_GetBook_ShouldCallSelectQuery(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	testServer := PostgreSQLRepo{DB: db}
+	// setup
+	testServer, mock := prepareTestDB(t)
+	defer testServer.DB.Close()
 
-	expectedBook := &models.Book{ID: "3", Name: "Book3", Author: "Author3"}
+	// given
+	resultBookID := "3"
+	expectedBook := &models.Book{ID: resultBookID, Name: "Book3", Author: "Author3"}
 
 	dbRows := sqlmock.NewRows(booksPostgresqlRows)
 	dbRows.AddRow(expectedBook.ID, expectedBook.Name, expectedBook.Author)
-
-	resultBookID := "3"
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, name, author FROM books WHERE id=$1;`)).
 		WithArgs(resultBookID).
 		WillReturnRows(dbRows)
 	mock.ExpectCommit()
 
+	// when
 	resBook, err := testServer.GetBook(resultBookID)
+
+	// then
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,14 +109,11 @@ func Test_Postgresql_GetBook_ShouldCallSelectQuery(t *testing.T) {
 }
 
 func Test_Postgresql_AddBook_ShouldCallInsertQuery(t *testing.T) {
-	// given
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	testServer := PostgreSQLRepo{DB: db}
+	// setup
+	testServer, mock := prepareTestDB(t)
+	defer testServer.DB.Close()
 
+	// given
 	testBook := &models.Book{ID: "3", Name: "Book3", Author: "Author3"}
 
 	dbRows := sqlmock.NewRows([]string{"id"})
@@ -140,13 +138,11 @@ func Test_Postgresql_AddBook_ShouldCallInsertQuery(t *testing.T) {
 }
 
 func Test_Postgresql_UpdateBook_ShouldCallUpdateQuery(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	testServer := PostgreSQLRepo{DB: db}
+	// setup
+	testServer, mock := prepareTestDB(t)
+	defer testServer.DB.Close()
 
+	// given
 	testBook := &models.Book{ID: "3", Name: "Book3", Author: "Author3"}
 
 	res := sqlmock.NewResult(1, 1)
@@ -155,20 +151,21 @@ func Test_Postgresql_UpdateBook_ShouldCallUpdateQuery(t *testing.T) {
 		WillReturnResult(res)
 	mock.ExpectCommit()
 
-	err = testServer.UpdateBook(testBook.ID, testBook)
+	// when
+	err := testServer.UpdateBook(testBook.ID, testBook)
+
+	// then
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func Test_Postgresql_DeleteBook_ShouldCallDeleteQuery(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	testServer := PostgreSQLRepo{DB: db}
+	// setup
+	testServer, mock := prepareTestDB(t)
+	defer testServer.DB.Close()
 
+	// given
 	testBook := &models.Book{ID: "3", Name: "Book3", Author: "Author3"}
 
 	res := sqlmock.NewResult(1, 1)
@@ -177,29 +174,40 @@ func Test_Postgresql_DeleteBook_ShouldCallDeleteQuery(t *testing.T) {
 		WillReturnResult(res)
 	mock.ExpectCommit()
 
-	err = testServer.DeleteBook(testBook.ID)
+	// when
+	err := testServer.DeleteBook(testBook.ID)
+
+	// then
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func Test_Postgresql_DeleteAllBooks_ShouldCallDeleteAllQuery(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	testServer := PostgreSQLRepo{DB: db}
+	// setup
+	testServer, mock := prepareTestDB(t)
+	defer testServer.DB.Close()
 
+	// given
 	res := sqlmock.NewResult(1, 1)
-
 	mock.ExpectExec(`DELETE FROM books;`).WillReturnResult(res)
 	mock.ExpectCommit()
 
-	err = testServer.DeleteAllBooks()
+	// when
+	err := testServer.DeleteAllBooks()
+
+	// then
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
-// utility functions
+func prepareTestDB(t *testing.T) (*PostgreSQLRepo, sqlmock.Sqlmock) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("[SETUP] Encountered error while preparing test db mock: %s\n", err)
+	}
+
+	testServer := &PostgreSQLRepo{DB: db}
+	return testServer, mock
+}

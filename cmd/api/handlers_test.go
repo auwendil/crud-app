@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/auwendil/crud-app/internal/models"
 	"github.com/go-chi/chi/v5"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,22 +20,23 @@ var storedBooks = []*models.Book{
 }
 
 func Test_Server_HandleGetBooks(t *testing.T) {
+	// setup
+	storageSize := 3
+	ts := &Server{
+		dbRepo: prepareDbRepo(storageSize),
+	}
+
 	// given
 	req := httptest.NewRequest(http.MethodGet, "/book", nil)
 	w := httptest.NewRecorder()
 
-	storageSize := 3
-	ts := &Server{
-		dbRepo: prepareDbRepoMock(storageSize),
-	}
-
 	// when
 	ts.handleGetAllBooks(w, req)
 
-	// then
 	httpResponse := w.Result()
 	defer httpResponse.Body.Close()
 
+	// then
 	if httpResponse.StatusCode != http.StatusOK {
 		t.Errorf("Expected status %d(%s) but received: %d(%s)\n",
 			http.StatusOK, http.StatusText(http.StatusOK),
@@ -59,28 +61,25 @@ func Test_Server_HandleGetBooks(t *testing.T) {
 
 func Test_Server_HandleGetBookById(t *testing.T) {
 	// setup
-	expectedBook := storedBooks[0]
 	storageSize := 3
 	ts := &Server{
-		dbRepo: prepareDbRepoMock(storageSize),
+		dbRepo: prepareDbRepo(storageSize),
 	}
 
 	t.Run("Returns expected book with correct id", func(t *testing.T) {
 		// given
-		req := httptest.NewRequest(http.MethodGet, "/book/{id}", nil)
-		rctx := chi.NewRouteContext()
-		rctx.URLParams.Add("id", expectedBook.ID)
-		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		expectedBook := storedBooks[0]
 
+		req := addChiParams(httptest.NewRequest(http.MethodGet, "/book/{id}", nil), "id", expectedBook.ID)
 		w := httptest.NewRecorder()
 
 		// when
 		ts.handleGetBook(w, req)
 
-		// then
 		httpResponse := w.Result()
 		defer httpResponse.Body.Close()
 
+		// then
 		if httpResponse.StatusCode != http.StatusOK {
 			t.Errorf("Expected status %d(%s) but received: %d(%s)\n",
 				http.StatusOK, http.StatusText(http.StatusOK),
@@ -102,19 +101,17 @@ func Test_Server_HandleGetBookById(t *testing.T) {
 	t.Run("Returns error when book is not found", func(t *testing.T) {
 		// given
 		notExistingID := "-1"
-		req := httptest.NewRequest(http.MethodGet, "/book/{id}", nil)
-		rctx := chi.NewRouteContext()
-		rctx.URLParams.Add("id", notExistingID)
-		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+		req := addChiParams(httptest.NewRequest(http.MethodGet, "/book/{id}", nil), "id", notExistingID)
 		w := httptest.NewRecorder()
 
 		// when
 		ts.handleGetBook(w, req)
 
-		// then
 		httpResponse := w.Result()
 		defer httpResponse.Body.Close()
 
+		// then
 		if httpResponse.StatusCode != http.StatusNotFound {
 			t.Errorf("Expected status %d(%s) but received: %d(%s)\n",
 				http.StatusNotFound, http.StatusText(http.StatusNotFound),
@@ -132,28 +129,24 @@ func Test_Server_HandleAddBook(t *testing.T) {
 	// setup
 	storageSize := 3
 	ts := &Server{
-		dbRepo: prepareDbRepoMock(storageSize),
+		dbRepo: prepareDbRepo(storageSize),
 	}
 
 	t.Run("Should create new book if not exists", func(t *testing.T) {
 		// given
 		newBook := &models.Book{ID: "5", Name: "NewBook", Author: "NewAuthor"}
-		var buf bytes.Buffer
-		err := json.NewEncoder(&buf).Encode(newBook)
-		if err != nil {
-			t.Fatalf("Encountered error while encoding test data: %s\n", err)
-		}
+		payload := preparePayload(t, newBook)
 
-		req := httptest.NewRequest(http.MethodPost, "/book", &buf)
+		req := httptest.NewRequest(http.MethodPost, "/book", payload)
 		w := httptest.NewRecorder()
 
 		// when
 		ts.handleAddBook(w, req)
 
-		// then
 		httpResponse := w.Result()
 		defer httpResponse.Body.Close()
 
+		// then
 		if httpResponse.StatusCode != http.StatusCreated {
 			t.Errorf("Expected status %d(%s) but received: %d(%s)\n",
 				http.StatusCreated, http.StatusText(http.StatusCreated),
@@ -169,21 +162,18 @@ func Test_Server_HandleAddBook(t *testing.T) {
 	t.Run("Should create new book if not exists", func(t *testing.T) {
 		// given
 		existingBook := storedBooks[0]
-		var buf bytes.Buffer
-		err := json.NewEncoder(&buf).Encode(existingBook)
-		if err != nil {
-			t.Fatalf("Encountered error while encoding test data: %s\n", err)
-		}
-		req := httptest.NewRequest(http.MethodPost, "/book", &buf)
+		payload := preparePayload(t, existingBook)
+
+		req := httptest.NewRequest(http.MethodPost, "/book", payload)
 		w := httptest.NewRecorder()
 
 		// when
 		ts.handleAddBook(w, req)
 
-		// then
 		httpResponse := w.Result()
 		defer httpResponse.Body.Close()
 
+		// then
 		if httpResponse.StatusCode != http.StatusInternalServerError {
 			t.Errorf("Expected status %d(%s) but received: %d(%s)\n",
 				http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError),
@@ -198,23 +188,21 @@ func Test_Server_HandleAddBook(t *testing.T) {
 
 	t.Run("Should fail with malformed payload", func(t *testing.T) {
 		// given
-		var buf bytes.Buffer
-		err := json.NewEncoder(&buf).Encode(struct {
+		malformedPayload := struct {
 			ID int `json:"id"`
-		}{-1})
-		if err != nil {
-			t.Fatalf("Encountered error while encoding test data: %s\n", err)
-		}
-		req := httptest.NewRequest(http.MethodPost, "/book", &buf)
+		}{-1}
+		payload := preparePayload(t, malformedPayload)
+
+		req := httptest.NewRequest(http.MethodPost, "/book", payload)
 		w := httptest.NewRecorder()
 
 		// when
 		ts.handleAddBook(w, req)
 
-		// then
 		httpResponse := w.Result()
 		defer httpResponse.Body.Close()
 
+		// then
 		if httpResponse.StatusCode != http.StatusBadRequest {
 			t.Errorf("Expected status %d(%s) but received: %d(%s)\n",
 				http.StatusBadRequest, http.StatusText(http.StatusBadRequest),
@@ -232,33 +220,24 @@ func Test_Server_HandleUpdateBook(t *testing.T) {
 	// setup
 	storageSize := 3
 	ts := &Server{
-		dbRepo: prepareDbRepoMock(storageSize),
+		dbRepo: prepareDbRepo(storageSize),
 	}
 
 	t.Run("Should update book", func(t *testing.T) {
 		// given
-		updatedName := "UpdatedBookName"
-		updatedAuthor := "UpdatedBookAuthor"
-		updatedBook := &models.Book{ID: storedBooks[0].ID, Name: updatedName, Author: updatedAuthor}
-		var buf bytes.Buffer
-		err := json.NewEncoder(&buf).Encode(updatedBook)
-		if err != nil {
-			t.Fatalf("Encountered error while encoding test data: %s\n", err)
-		}
+		updatedBook := &models.Book{ID: storedBooks[0].ID, Name: "UpdatedBookName", Author: "UpdatedBookAuthor"}
+		payload := preparePayload(t, updatedBook)
 
-		req := httptest.NewRequest(http.MethodPut, "/book/{id}", &buf)
-		rctx := chi.NewRouteContext()
-		rctx.URLParams.Add("id", storedBooks[0].ID)
-		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		req := addChiParams(httptest.NewRequest(http.MethodPut, "/book/{id}", payload), "id", storedBooks[0].ID)
 		w := httptest.NewRecorder()
 
 		// when
 		ts.handleUpdateBook(w, req)
 
-		// then
 		httpResponse := w.Result()
 		defer httpResponse.Body.Close()
 
+		// then
 		if httpResponse.StatusCode != http.StatusNoContent {
 			t.Errorf("Expected status %d(%s) but received: %d(%s)\n",
 				http.StatusNoContent, http.StatusText(http.StatusNoContent),
@@ -273,26 +252,20 @@ func Test_Server_HandleUpdateBook(t *testing.T) {
 
 	t.Run("Should not update not existing book", func(t *testing.T) {
 		// given
-		updatedName := "UpdatedBookName"
-		updatedAuthor := "UpdatedBookAuthor"
 		notExistingId := "-1"
-		updatedBook := &models.Book{ID: notExistingId, Name: updatedName, Author: updatedAuthor}
-		var buf bytes.Buffer
-		err := json.NewEncoder(&buf).Encode(updatedBook)
-		if err != nil {
-			t.Fatalf("Encountered error while encoding test data: %s\n", err)
-		}
+		updatedBook := &models.Book{ID: notExistingId, Name: "UpdatedBookName", Author: "UpdatedBookAuthor"}
+		payload := preparePayload(t, updatedBook)
 
-		req := httptest.NewRequest(http.MethodPut, "/book", &buf)
+		req := addChiParams(httptest.NewRequest(http.MethodPut, "/book/{id}", payload), "id", notExistingId)
 		w := httptest.NewRecorder()
 
 		// when
 		ts.handleUpdateBook(w, req)
 
-		// then
 		httpResponse := w.Result()
 		defer httpResponse.Body.Close()
 
+		// then
 		if httpResponse.StatusCode != http.StatusInternalServerError {
 			t.Errorf("Expected status %d(%s) but received: %d(%s)\n",
 				http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError),
@@ -307,23 +280,21 @@ func Test_Server_HandleUpdateBook(t *testing.T) {
 
 	t.Run("Should fail with malformed payload", func(t *testing.T) {
 		// given
-		var buf bytes.Buffer
-		err := json.NewEncoder(&buf).Encode(struct {
+		malformedPayload := struct {
 			ID int `json:"id"`
-		}{-1})
-		if err != nil {
-			t.Fatalf("Encountered error while encoding test data: %s\n", err)
-		}
-		req := httptest.NewRequest(http.MethodPost, "/book", &buf)
+		}{-1}
+		payload := preparePayload(t, malformedPayload)
+
+		req := httptest.NewRequest(http.MethodPost, "/book", payload)
 		w := httptest.NewRecorder()
 
 		// when
 		ts.handleUpdateBook(w, req)
 
-		// then
 		httpResponse := w.Result()
 		defer httpResponse.Body.Close()
 
+		// then
 		if httpResponse.StatusCode != http.StatusBadRequest {
 			t.Errorf("Expected status %d(%s) but received: %d(%s)\n",
 				http.StatusBadRequest, http.StatusText(http.StatusBadRequest),
@@ -338,29 +309,26 @@ func Test_Server_HandleUpdateBook(t *testing.T) {
 }
 
 func Test_Server_HandleDeleteBook(t *testing.T) {
-	// setup
-	storageSize := 3
-	ts := &Server{
-		dbRepo: prepareDbRepoMock(storageSize),
-	}
-
 	t.Run("Should delete book", func(t *testing.T) {
+		// setup
+		storageSize := 3
+		ts := &Server{
+			dbRepo: prepareDbRepo(storageSize),
+		}
+
 		// given
 		deletedBook := storedBooks[0]
-		req := httptest.NewRequest(http.MethodDelete, "/book/{id}", nil)
-		rctx := chi.NewRouteContext()
-		rctx.URLParams.Add("id", deletedBook.ID)
-		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
+		req := addChiParams(httptest.NewRequest(http.MethodDelete, "/book/{id}", nil), "id", deletedBook.ID)
 		w := httptest.NewRecorder()
 
 		// when
 		ts.handleDeleteBook(w, req)
 
-		// then
 		httpResponse := w.Result()
 		defer httpResponse.Body.Close()
 
+		// then
 		if httpResponse.StatusCode != http.StatusNoContent {
 			t.Fatalf("Expected status %d(%s) but received: %d(%s)\n",
 				http.StatusNoContent, http.StatusText(http.StatusNoContent),
@@ -378,22 +346,25 @@ func Test_Server_HandleDeleteBook(t *testing.T) {
 	})
 
 	t.Run("Should not delete book if not exists", func(t *testing.T) {
+		// setup
+		storageSize := 3
+		ts := &Server{
+			dbRepo: prepareDbRepo(storageSize),
+		}
+
 		// given
 		notExistingID := "-1"
-		req := httptest.NewRequest(http.MethodDelete, "/book/{id}", nil)
-		rctx := chi.NewRouteContext()
-		rctx.URLParams.Add("id", notExistingID)
-		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
+		req := addChiParams(httptest.NewRequest(http.MethodDelete, "/book/{id}", nil), "id", notExistingID)
 		w := httptest.NewRecorder()
 
 		// when
 		ts.handleDeleteBook(w, req)
 
-		// then
 		httpResponse := w.Result()
 		defer httpResponse.Body.Close()
 
+		// then
 		if httpResponse.StatusCode != http.StatusBadRequest {
 			t.Fatalf("Expected status %d(%s) but received: %d(%s)\n",
 				http.StatusBadRequest, http.StatusText(http.StatusBadRequest),
@@ -407,49 +378,47 @@ func Test_Server_HandleDeleteBook(t *testing.T) {
 	})
 }
 
-func Test_Server_HandleDeleteAllBooks(t *testing.T) {
+func Test_Server_HandleDeleteAllBooksShouldDeleteAllBooks(t *testing.T) {
 	// setup
 	storageSize := 3
 	ts := &Server{
-		dbRepo: prepareDbRepoMock(storageSize),
+		dbRepo: prepareDbRepo(storageSize),
 	}
 
-	t.Run("Should delete all book", func(t *testing.T) {
-		// given
-		req := httptest.NewRequest(http.MethodDelete, "/book", nil)
-		w := httptest.NewRecorder()
+	// given
+	req := httptest.NewRequest(http.MethodDelete, "/book", nil)
+	w := httptest.NewRecorder()
 
-		// when
-		ts.handleDeleteAll(w, req)
+	// when
+	ts.handleDeleteAll(w, req)
 
-		// then
-		httpResponse := w.Result()
-		defer httpResponse.Body.Close()
+	httpResponse := w.Result()
+	defer httpResponse.Body.Close()
 
-		if httpResponse.StatusCode != http.StatusNoContent {
-			t.Fatalf("Expected status %d(%s) but received: %d(%s)\n",
-				http.StatusNoContent, http.StatusText(http.StatusNoContent),
-				httpResponse.StatusCode, http.StatusText(httpResponse.StatusCode))
-		}
+	// then
+	if httpResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("Expected status %d(%s) but received: %d(%s)\n",
+			http.StatusNoContent, http.StatusText(http.StatusNoContent),
+			httpResponse.StatusCode, http.StatusText(httpResponse.StatusCode))
+	}
 
-		jsonResponse := parseHttpResponse(t, httpResponse)
-		if jsonResponse.Error {
-			t.Fatalf("Encountered error but there should be none: %+v\n", jsonResponse)
-		}
+	jsonResponse := parseHttpResponse(t, httpResponse)
+	if jsonResponse.Error {
+		t.Fatalf("Encountered error but there should be none: %+v\n", jsonResponse)
+	}
 
-		if books, _ := ts.dbRepo.GetAllBooks(); len(books) > 0 {
-			t.Fatalf("All books should be removed from repo, but there are still %d available\n", len(books))
-		}
-	})
+	if books, _ := ts.dbRepo.GetAllBooks(); len(books) > 0 {
+		t.Fatalf("All books should be removed from repo, but there are still %d available\n", len(books))
+	}
 }
 
 // utils
 
-type dbRepoMock struct {
+type dbRepoStub struct {
 	m map[string]*models.Book
 }
 
-func (r *dbRepoMock) GetAllBooks() ([]*models.Book, error) {
+func (r *dbRepoStub) GetAllBooks() ([]*models.Book, error) {
 	var books = []*models.Book{}
 	for _, v := range r.m {
 		books = append(books, v)
@@ -457,7 +426,7 @@ func (r *dbRepoMock) GetAllBooks() ([]*models.Book, error) {
 	return books, nil
 }
 
-func (r *dbRepoMock) GetBook(id string) (*models.Book, error) {
+func (r *dbRepoStub) GetBook(id string) (*models.Book, error) {
 	b, ok := r.m[id]
 	if !ok {
 		return nil, fmt.Errorf("book (id=%s) not found", id)
@@ -465,7 +434,7 @@ func (r *dbRepoMock) GetBook(id string) (*models.Book, error) {
 	return b, nil
 }
 
-func (r *dbRepoMock) AddBook(b *models.Book) (*models.Book, error) {
+func (r *dbRepoStub) AddBook(b *models.Book) (*models.Book, error) {
 	if _, ok := r.m[b.ID]; ok {
 		return nil, fmt.Errorf("Book already exists")
 	}
@@ -474,7 +443,7 @@ func (r *dbRepoMock) AddBook(b *models.Book) (*models.Book, error) {
 	return b, nil
 }
 
-func (r *dbRepoMock) UpdateBook(id string, updatedBook *models.Book) error {
+func (r *dbRepoStub) UpdateBook(id string, updatedBook *models.Book) error {
 	if _, ok := r.m[id]; !ok {
 		return fmt.Errorf("Book does not exist")
 	}
@@ -482,7 +451,7 @@ func (r *dbRepoMock) UpdateBook(id string, updatedBook *models.Book) error {
 	return nil
 }
 
-func (r *dbRepoMock) DeleteBook(id string) error {
+func (r *dbRepoStub) DeleteBook(id string) error {
 	if _, ok := r.m[id]; !ok {
 		return fmt.Errorf("Book does not exist")
 	}
@@ -490,13 +459,13 @@ func (r *dbRepoMock) DeleteBook(id string) error {
 	return nil
 }
 
-func (r *dbRepoMock) DeleteAllBooks() error {
+func (r *dbRepoStub) DeleteAllBooks() error {
 	r.m = make(map[string]*models.Book)
 	return nil
 }
 
-func prepareDbRepoMock(amountOfBooksLoaded int) *dbRepoMock {
-	repo := &dbRepoMock{
+func prepareDbRepo(amountOfBooksLoaded int) *dbRepoStub {
+	repo := &dbRepoStub{
 		m: make(map[string]*models.Book),
 	}
 
@@ -508,6 +477,21 @@ func prepareDbRepoMock(amountOfBooksLoaded int) *dbRepoMock {
 		repo.m[book.ID] = book
 	}
 	return repo
+}
+
+func addChiParams(r *http.Request, paramName, paramValue string) *http.Request {
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add(paramName, paramValue)
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+}
+
+func preparePayload(t *testing.T, payload interface{}) io.Reader {
+	var buf bytes.Buffer
+	err := json.NewEncoder(&buf).Encode(payload)
+	if err != nil {
+		t.Fatalf("[SETUP] Encountered error while encoding test data: %s\n", err)
+	}
+	return &buf
 }
 
 func parseHttpResponse(t *testing.T, res *http.Response) JSONResponse {

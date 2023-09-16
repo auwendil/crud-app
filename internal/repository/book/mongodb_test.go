@@ -13,17 +13,17 @@ func Test_MongoDB_GetAllBooks(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	defer mt.Close()
 
-	expectedBooks := []*models.Book{
-		{ID: "111111111111111111111111", Name: "Book1", Author: "Author1"},
-		{ID: "222222222222222222222222", Name: "Book2", Author: "Author2"},
-		{ID: "333333333333333333333333", Name: "Book3", Author: "Author3"},
-		{ID: "444444444444444444444444", Name: "Book4", Author: "Author4"},
-	}
-
 	mt.Run("Should return expected array", func(mt *mtest.T) {
 		// given
 		ts := MongoDBRepo{
 			collection: mt.Coll,
+		}
+
+		expectedBooks := []*models.Book{
+			{ID: "111111111111111111111111", Name: "Book1", Author: "Author1"},
+			{ID: "222222222222222222222222", Name: "Book2", Author: "Author2"},
+			{ID: "333333333333333333333333", Name: "Book3", Author: "Author3"},
+			{ID: "444444444444444444444444", Name: "Book4", Author: "Author4"},
 		}
 
 		resBooks := []bson.D{
@@ -32,7 +32,6 @@ func Test_MongoDB_GetAllBooks(t *testing.T) {
 			createBsonForBook(t, expectedBooks[2]),
 			createBsonForBook(t, expectedBooks[3]),
 		}
-
 		cursorResponses := []bson.D{
 			mtest.CreateCursorResponse(1, "db.books", mtest.FirstBatch, resBooks[0]),
 			mtest.CreateCursorResponse(1, "db.books", mtest.NextBatch, resBooks[1]),
@@ -40,7 +39,6 @@ func Test_MongoDB_GetAllBooks(t *testing.T) {
 			mtest.CreateCursorResponse(1, "db.books", mtest.NextBatch, resBooks[3]),
 			mtest.CreateCursorResponse(0, "db.books", mtest.NextBatch),
 		}
-
 		mt.AddMockResponses(cursorResponses...)
 
 		// when
@@ -91,13 +89,13 @@ func Test_MongoDB_GetBook(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	defer mt.Close()
 
-	expectedBook := &models.Book{ID: "333333333333333333333333", Name: "Book3", Author: "Author3"}
-
 	mt.Run("Should return expected book", func(mt *mtest.T) {
 		// given
 		ts := MongoDBRepo{
 			collection: mt.Coll,
 		}
+
+		expectedBook := &models.Book{ID: "333333333333333333333333", Name: "Book3", Author: "Author3"}
 
 		mt.AddMockResponses(mtest.CreateCursorResponse(1, "db.books", mtest.FirstBatch, createBsonForBook(t, expectedBook)))
 
@@ -143,13 +141,13 @@ func Test_MongoDB_AddBook(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	defer mt.Close()
 
-	createdBook := &models.Book{ID: "333333333333333333333333", Name: "Book3", Author: "Author3"}
-
 	mt.Run("Should create book", func(mt *mtest.T) {
 		// given
 		ts := MongoDBRepo{
 			collection: mt.Coll,
 		}
+
+		createdBook := &models.Book{ID: "333333333333333333333333", Name: "Book3", Author: "Author3"}
 
 		mt.AddMockResponses(mtest.CreateSuccessResponse())
 
@@ -172,16 +170,15 @@ func Test_MongoDB_UpdateBook(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	defer mt.Close()
 
-	updatedBook := &models.Book{ID: "333333333333333333333333", Name: "Book3", Author: "Author3"}
-
 	mt.Run("Should update book", func(mt *mtest.T) {
 		// given
 		ts := MongoDBRepo{
 			collection: mt.Coll,
 		}
 
+		updatedBook := &models.Book{ID: "333333333333333333333333", Name: "Book3", Author: "Author3"}
+
 		updated := bson.D{{"ok", 1}, {"value", createBsonForBook(t, updatedBook)}}
-		//mt.AddMockResponses(mtest.CreateSuccessResponse(updated...))
 		mt.AddMockResponses(updated)
 
 		// when
@@ -199,13 +196,13 @@ func Test_MongoDB_DeleteBook(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	defer mt.Close()
 
-	deletedBook := &models.Book{ID: "333333333333333333333333", Name: "Book3", Author: "Author3"}
-
 	mt.Run("Should delete book", func(mt *mtest.T) {
 		// given
 		ts := MongoDBRepo{
 			collection: mt.Coll,
 		}
+
+		deletedBook := &models.Book{ID: "333333333333333333333333", Name: "Book3", Author: "Author3"}
 
 		mt.AddMockResponses(mtest.CreateSuccessResponse())
 
@@ -279,33 +276,4 @@ func createBsonForBook(t *testing.T, b *models.Book) bson.D {
 	}
 
 	return parsedBook
-}
-
-//
-//func createBookForBson(t *testing.T, b bson.D) *models.Book {
-//	var book *models.Book
-//
-//	book.ID = fmt.Sprintf("%s", getKeyFromBson("_id", b))
-//	book.Name = fmt.Sprintf("%s", getKeyFromBson("name", b))
-//	book.Author = fmt.Sprintf("%s", getKeyFromBson("author", b))
-//
-//	return book
-//}
-//
-//func compareBookAndBsonEquals(a *models.Book, b bson.D) bool {
-//	var id string
-//	if oid, ok := getKeyFromBson("_id", b).(primitive.ObjectID); ok {
-//		id = oid.Hex()
-//	}
-//
-//	return a.ID == id && a.Name == getKeyFromBson("name", b) && a.Author == getKeyFromBson("author", b)
-//}
-
-func getKeyFromBson(key string, b bson.D) interface{} {
-	for _, e := range b {
-		if e.Key == key {
-			return e.Value
-		}
-	}
-	return nil
 }
